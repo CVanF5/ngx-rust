@@ -120,14 +120,41 @@ impl Drop for SchedulerInner {
 }
 
 fn schedule(runnable: Runnable, info: ScheduleInfo) {
+    // Always defer to the next event-loop tick via `ngx_post_event`; never
+    // synchronously re-poll the runnable.
+    //
+    // Background: `Waker::wake()` is invoked from arbitrary contexts —
+    // including inside other futures' `Drop` impls (e.g., h2's
+    // `Streams::drop` wakes its parked `Connection` task while still
+    // holding a `Mutex<Inner>` guard).  If `schedule()` runs `runnable.run()`
+    // synchronously from such a call site, the freshly-polled runnable can
+    // attempt to acquire the very same Mutex — DEADLOCK.  Both real-world
+    // single-thread executors (Tokio's `LocalSet`, async-executor) and the
+    // implicit contract of `Waker` require that `wake()` be non-blocking and
+    // non-re-entrant; sync re-polling violates that contract.
+    //
+    // The previous `woken_while_running == false` branch ran
+    // `runnable.run()` synchronously.  In ngx-rust 0.6.x + hyper 1.x +
+    // h2 0.4.x, that path deadlocked the ngx-otel-rust Phase 1.2 in-worker
+    // gRPC harness when the user-side `hyper::client::conn::http2::Connection`
+    // was dropped.
+    //
+    // The single-threaded nginx event-loop model makes "always queue" cheap:
+    // `ngx_post_event` is just an `ngx_queue_insert_*` on a worker-local
+    // intrusive list, and `ngx_event_process_posted` runs at the end of
+    // every `ngx_process_events_and_timers` cycle.  Latency cost is one
+    // event loop tick.
+    SCHEDULER.schedule(runnable);
     if info.woken_while_running {
-        SCHEDULER.schedule(runnable);
         ngx_log_debug!(
             ngx_cycle_log().as_ptr(),
             "async: task scheduled while running"
         );
     } else {
-        runnable.run();
+        ngx_log_debug!(
+            ngx_cycle_log().as_ptr(),
+            "async: task scheduled (deferred)"
+        );
     }
 }
 
