@@ -119,6 +119,18 @@ impl Drop for SchedulerInner {
     }
 }
 
+// TODO(upstream-pr): before opening the PR against nginx/ngx-rust, add a
+// standalone reproducer test in this file that constructs the deadlock
+// pattern without pulling in hyper/h2/tonic as test dependencies.  The
+// minimal shape: a future F whose Drop impl takes a `Mutex` guard and
+// then calls `cx.waker().wake()` on a captured waker.  Pre-patch
+// (sync `runnable.run()` on the wake-caller's stack), the re-poll
+// deadlocks against the same Mutex.  Post-patch, the wake is queued
+// via `ngx_post_event` and processed safely on the next event-loop
+// tick.  The test demonstrates the Waker contract violation we're
+// fixing in a single file with no external crates needed.
+// See PHASE_1_2_ITEM_1_FINDINGS.md in the ngx-otel-rust dev tree for
+// the discovery story this reproducer would crystallise.
 fn schedule(runnable: Runnable, info: ScheduleInfo) {
     // Always defer to the next event-loop tick via `ngx_post_event`; never
     // synchronously re-poll the runnable.
