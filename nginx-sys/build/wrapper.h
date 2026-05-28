@@ -1,5 +1,6 @@
 #include <ngx_config.h>
 #include <ngx_core.h>
+#include <ngx_channel.h>
 
 /* __has_include was a compiler-specific extension until C23,
  * but it's safe to assume that bindgen supports it via libclang.
