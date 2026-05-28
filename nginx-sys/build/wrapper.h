@@ -25,6 +25,17 @@ const char *NGX_RS_MODULE_SIGNATURE = NGX_MODULE_SIGNATURE;
 // latter being unsupported by bindgen.
 const size_t NGX_RS_ALIGNMENT = NGX_ALIGNMENT;
 
+// NGX_READ_EVENT / NGX_WRITE_EVENT are #define'd per event-module in
+// src/event/ngx_event.h.  On kqueue (macOS) they expand to a single token
+// (EVFILT_READ / EVFILT_WRITE) and bindgen lifts them to `pub const`.  On
+// epoll (Linux) they expand to a parenthesised compound expression
+// `(EPOLLIN|EPOLLRDHUP)` / `EPOLLOUT`, which bindgen drops.  Re-binding the
+// macro through a file-scope `const` lets bindgen evaluate the initializer
+// and emit a Rust constant uniformly across event mechanisms — same trick
+// as NGX_RS_ALIGNMENT above.
+const ngx_int_t NGX_RS_READ_EVENT  = NGX_READ_EVENT;
+const ngx_int_t NGX_RS_WRITE_EVENT = NGX_WRITE_EVENT;
+
 // `--prefix=` results in not emitting the declaration
 #ifndef NGX_PREFIX
 #define NGX_PREFIX ""
